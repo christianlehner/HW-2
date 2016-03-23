@@ -1,6 +1,6 @@
 ---
 title: "MATH 216 Homework 2"
-author: "WRITE YOUR NAME HERE"
+author: "Christian Lehner"
 output: html_document
 ---
 
@@ -8,6 +8,8 @@ output: html_document
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(dplyr))
 suppressPackageStartupMessages(library(foreign))
+suppressPackageStartupMessages(library(stringr))
+suppressPackageStartupMessages(library(shiny))
 ```
 
 
@@ -15,10 +17,10 @@ suppressPackageStartupMessages(library(foreign))
 
 Please indicate
 
-* Who you collaborated with:
-* Roughly how much time you spent on this HW:
-* What gave you the most trouble:
-* Any comments you have: 
+* Who you collaborated with: Kyler, Paul, 
+* Roughly how much time you spent on this HW: 10 - 14
+* What gave you the most trouble: Question 2
+* Any comments you have: I want to do a lot more work on okcupid, I feel this data set needs alot more cleaing or at least more thorough analysis than some we have worked with. I also want to learn how to use shiny and plotly for the next assignment but I haven't had time yet. My exploratory analysis of okcupid makes me think that we will need to organize variables and group some of their levels ie job type or education level.  
 
 
 
@@ -42,20 +44,56 @@ pollution <- read.dta(url) %>%
 ```
 
 ### a)
-
+mortality rate vs nitric oxides levels
+need to graph residuals
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+plot1 <- ggplot(pollution, aes(x=nox, y=mort)) + 
+  geom_point() + geom_smooth(method = "lm")
+plot1
+
+model1 <-lm(mort ~ nox, data=pollution)
+summary(model1)
+
+rmodel1 <- resid(model1)
+residnox <- ggplot(pollution, aes(nox, rmodel1))
+residnox  + geom_point() + ggtitle("Residuals of Nox")#residuals centered around zero but pattern
+
 
 ```
 
 
 ### b)
-
+the log of mortalities
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+ggplot(data=pollution, aes(x=nox)) +
+  geom_histogram() #not normal dist
+
+pollution <- mutate(pollution, lnnox = log(nox))#taking ln of nox
+ggplot(data=pollution, aes(x=lnnox)) +
+  geom_histogram() #more normal
+
+plot3 <- ggplot(pollution, aes(x=lnnox, y=mort)) + 
+  geom_point() + geom_smooth(method = "lm")
+plot3 #better regression?
+
+model3 <-lm(mort ~ lnnox, data=pollution)
+summary(model3) #fit and signifigance
+
+residuals2 <-resid(model3)
+plot3r <- ggplot(pollution, aes(x=lnnox, y=residuals2)) 
+plot3r + geom_jitter() + ggtitle("Residuals of lnnox") #linearity
+
+plotresid <- ggplot(data=pollution, aes(x=residuals2)) +
+  geom_histogram() + ggtitle("Distribution of mort-lnnox Residuals")#normal dist of residuals
+plotresid
+
 
 ```
 
 
 ### c)
+The slope coefficient of lnnox in the model morthat = 904.724 + 15.335(lnnox)
+represents a change in + 15.335 mortalities per 100k for a 1% increase in nox.
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
 
@@ -65,28 +103,57 @@ pollution <- read.dta(url) %>%
 ### d)
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+pollution <- mutate(pollution, lnso2 = log(so2))
+ggplot(data=pollution, aes(x=lnso2)) +
+  geom_histogram() + ggtitle("Distribution of lnso2")  #taking log makes normal dist
 
+pollution <- mutate(pollution, lnhc = log(hc))
+ggplot(data=pollution, aes(x=lnhc)) +
+  geom_histogram() + ggtitle("Distribution of lnhc")#taking log makes normal dist
+
+model2 <-lm(mort ~ lnnox + lnhc + lnso2, data=pollution)
+summary(model2) #[lin log] regresssion, more signifigance coefficients
+
+model3 <-lm(mort ~ nox + hc + so2, data=pollution)
+summary(model3) #[lin lin] regresssion better fit, less signifigance coeficients
+
+model2a <-lm(mort ~ hc + lnso2 + nox, data=pollution)
+summary(model2a) #best fit model
 ```
 
 
 ### e)
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
+set.seed(76)
+pollution1 <- sample_frac(pollution, .5) #random sample
+pollution1.5 <- as.numeric(rownames(pollution1))
+pollution2 <- pollution[-pollution1.5,] #everything but not selected by random sample
+
+model3 <-lm(mort ~ nox + hc + lnso2, data=pollution1)
+summary(model3) #first regression
+
+model4 <-lm(mort ~ nox + hc + lnso2, data=pollution2) #2nd regression
+
+pollution2
+cross <- predict(model3, pollution2) #crossvalidating with data from pollution 2 
+p2lm <- predict(model4) #actual, data that was used in ols regression
+predictions <- pollution2 %>% 
+              mutate(pred = cross) %>% 
+              mutate(actual = p2lm)  #mutating into one data set
+
+
+plotcross <- ggplot(predictions, aes(x=actual, y=pred)) + 
+            geom_abline(intercept = 0, slope = 1)
+plotcross + geom_point() + ggtitle("Cross Validatation of Model3 with data from Pollution2") 
+      #shows line values should be on if predictions                                                     were exactly equal for both models on the                                                        same data set
 
 ```
 
 
 ### f) What do you think are the reasons for using cross-validation?
 
-
-
-```{r, echo=FALSE, fig.width=12, fig.height=6}
-
-```
-
-
-
-
+To see how a model will generalize for a data set, too see if the model can predict outside of the set of data it was regressed with. This allows us to see if our model is overspecified.
 
 
 
@@ -106,16 +173,101 @@ Lec09 to the project directory `HW-2`.
 ```{r, echo=FALSE, cache=TRUE}
 # DO NOT EDIT THIS SECTION!
 profiles <- read.csv("profiles.csv", header=TRUE) %>% tbl_df()
+profiles <- profiles %>% sample_frac(0.1)
 ```
 
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
-# Feel free to make multiple code blocks, but set echo, fig.width, fig.height as 
-# above
+essays <- select(profiles, contains("essay"))
+profiles <- select(profiles, -contains("essay"))
+profiles <- profiles %>% 
+          mutate(is.female = ifelse(sex=="f", 1, 0))
+profiles$is_female <- profiles$is.female
+profiles <- profiles %>% 
+  mutate(
+    last_online = str_sub(last_online, 1, 10),
+    last_online = as.Date(last_online)
+  )
+
+lastlog <-ggplot(data=profiles, aes(last_online))
+lastlog +  geom_bar() + ggtitle("Histogram of last logins") #We could remove inactive accounts 
+
+
+
+
+heightdist <- ggplot(data=profiles, aes(x=height, y=is.female))
+heightdist +  geom_jitter(height=0.2, alpha=0.1)
 ```
-
-
+Last login distritution by day, displays active users.
+Height Distribution by Sex.
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
-# Feel free to make multiple code blocks, but set echo, fig.width, fig.height as 
-# above
+druguse <- ggplot(data=profiles, aes(x=drugs)) 
+druguse +  geom_bar(stat = "count", position = "stack") + 
+  facet_wrap(~sex, nrow=2) + ggtitle("Responses to Question of Drug Use")
 ```
+Barplots of drug use by sex.
+
+```{r, echo=FALSE, cache=TRUE}
+orien <- ggplot(profiles, aes(x=factor(sex), fill=factor(orientation))) +
+  geom_bar(position="fill") + labs(title = "Orientation", x = "sex", y = "Proportion") 
+orien #orientation
+drinks <- ggplot(profiles, aes(x=factor(is.female), fill=factor(drinks))) +
+  geom_bar(position="fill") + labs(title = "Alcohol Use", x = "sex", y = "Proportion") 
+drinks #drinking
+
+sex <- ggplot(profiles, aes(income)) + geom_histogram() +
+  facet_wrap(~ sex) + ggtitle("Relationship of Sex and Income")
+sex #income and sex
+
+body <- ggplot(profiles, aes(body_type)) + geom_bar() +
+  facet_wrap(~ sex) + labs(title = "Sex and Self Descriptor", x = "Number", y = "Body Type")  + coord_flip()
+body #interesting differences between sexes
+
+income <- lm(income ~ height + smokes, data=profiles) #attempted regression w/ many variables
+summary(income) # show results
+
+age <- ggplot(profiles, aes(factor(sex), age))
+age + geom_boxplot() + labs(title = "Age Distribution By Sex", x = "sex", y = "Count")
+#pretty mich the same median around 30
+```
+The two sexs have about the same median of 30 and similar quartile ranges. It also appears the some people don't answer this honeslty - I would assume they're not 120 year old okcupid users.
+
+```{r, echo=FALSE, cache=TRUE}
+find.query <- function(char.vector, query){
+  which.has.query <- grep(query, char.vector, ignore.case = TRUE)
+  length(which.has.query) != 0
+}
+profile.has.query <- function(data.frame, query){
+  query <- tolower(query)
+  has.query <- apply(data.frame, 1, find.query, query=query)
+  return(has.query)
+}
+profiles$has_tractor <- profile.has.query(data.frame = essays, query = "tractor")
+group_by(profiles, has_tractor) %>% 
+  summarise(prop_female=mean(is.female)) 
+```
+
+```{r, echo=FALSE, cache=TRUE}
+edprof <- profiles %>% 
+          group_by(education) %>% 
+          tally() #assigning it to new dataset so as not to edit profiles
+edprof$education <- factor(edprof$education, levels = edprof$education[order(-edprof$n)]) 
+#sort deccreasing
+education1 <- ggplot(edprof, aes(education, n)) 
+education1 + geom_bar(stat="identity") + coord_flip() +
+  labs(title = "Levels of Education", x = "Number", y = "Education Level")
+#or
+edprof2 <- profiles 
+tbl2 <- table(edprof2$education)
+edprof2<- droplevels(edprof2[edprof2$education %in% names(tbl2)[tbl2 >= 100],,drop=FALSE])
+min(table(edprof2$education))
+education2 <- ggplot(edprof2, aes(education))
+education2 + geom_bar() + coord_flip() 
+```
+
+This data set is huge, many of the variables have more than 10 levels. They're are interesting and intutitive relationships that can be derived from a random sample of 5000, in example, the relationship between gender and income, or gender and declared sexual orientation. Men and women also view themselves very different as is seen by the body type variable. Men and women use different words in essays, use/abuse their bodies differently and could have varying levels of honesty. 
+  I tried to fit some regressions but found no luck, all the fits where pretty terible, although height has some predictive strenght of income.  
+
+
+
+
