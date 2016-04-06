@@ -10,6 +10,11 @@ suppressPackageStartupMessages(library(dplyr))
 suppressPackageStartupMessages(library(foreign))
 suppressPackageStartupMessages(library(stringr))
 suppressPackageStartupMessages(library(shiny))
+suppressPackageStartupMessages(library(grid))
+suppressPackageStartupMessages(library(Rmisc))
+suppressPackageStartupMessages(library(scales))
+suppressPackageStartupMessages(library(plyr))
+
 ```
 
 
@@ -57,10 +62,9 @@ summary(model1)
 rmodel1 <- resid(model1)
 residnox <- ggplot(pollution, aes(nox, rmodel1))
 residnox  + geom_point() + ggtitle("Residuals of Nox")#residuals centered around zero but pattern
-
-
 ```
 
+The residuals appear centered around zero but they have a strong skew.
 
 ### b)
 the log of mortalities
@@ -86,30 +90,24 @@ plot3r + geom_jitter() + ggtitle("Residuals of lnnox") #linearity
 plotresid <- ggplot(data=pollution, aes(x=residuals2)) +
   geom_histogram() + ggtitle("Distribution of mort-lnnox Residuals")#normal dist of residuals
 plotresid
-
-
 ```
-
+I changed the functional form of the model to have a better distribution of residuals and create less skew. The fit is not be very strong in any of the models. The histogram shows they are normally distributed around zero and the scatter plot shows there is no heteroscedacity. 
 
 ### c)
+
 The slope coefficient of lnnox in the model morthat = 904.724 + 15.335(lnnox)
 represents a change in + 15.335 mortalities per 100k for a 1% increase in nox.
-
-```{r, echo=FALSE, fig.width=12, fig.height=6}
-
-```
-
 
 ### d)
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
 pollution <- mutate(pollution, lnso2 = log(so2))
-ggplot(data=pollution, aes(x=lnso2)) +
-  geom_histogram() + ggtitle("Distribution of lnso2")  #taking log makes normal dist
-
+pollution <- mutate(pollution, lnnox = log(nox))
 pollution <- mutate(pollution, lnhc = log(hc))
-ggplot(data=pollution, aes(x=lnhc)) +
-  geom_histogram() + ggtitle("Distribution of lnhc")#taking log makes normal dist
+lnso2dist <-ggplot(data=pollution, aes(x=lnso2)) +
+  geom_histogram() + ggtitle("Distribution of lnso2")  #taking log makes normal dist
+lnhcdist <-ggplot(data=pollution, aes(x=lnhc)) +
+  geom_histogram() + ggtitle("Distribution of lnhc")   #taking log makes normal dist
 
 model2 <-lm(mort ~ lnnox + lnhc + lnso2, data=pollution)
 summary(model2) #[lin log] regresssion, more signifigance coefficients
@@ -119,43 +117,86 @@ summary(model3) #[lin lin] regresssion better fit, less signifigance coeficients
 
 model2a <-lm(mort ~ hc + lnso2 + nox, data=pollution)
 summary(model2a) #best fit model
+
+multiplot(lnso2dist, lnhcdist, cols=2)
 ```
 
+I decided to change the functional form of some of the variables to give them more normal distibutions. The histograms show they increase in normality.
 
 ### e)
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
 set.seed(76)
-pollution1 <- sample_frac(pollution, .5) #random sample
-pollution1.5 <- as.numeric(rownames(pollution1))
-pollution2 <- pollution[-pollution1.5,] #everything but not selected by random sample
+# creating a random dataset called ransamp
+pollution <- pollution %>% 
+              mutate(rownames = 1:60)
+ransamp1 <- pollution[sample(1:nrow(pollution), 30,
+  	replace=FALSE),]
 
-model3 <-lm(mort ~ nox + hc + lnso2, data=pollution1)
-summary(model3) #first regression
+ransamp2 <-  pollution[!(pollution$rownames %in%  ransamp1$rownames),]
+ransamp2
+ransamp1lm <-lm(mort ~ lnnox + hc + so2, data=ransamp1)
+#creating table to plot of fitted vs true
+true_y <- ransamp2$mort #true mort values from ransam2
+fitted_y <- predict(ransamp1lm , ransamp2) #fitted data from ransamp2 by ransamp1 
+t <- data.frame(true_y, fitted_y)
+tbl_df(t)
+#plot with 45 degree line to show tat
+#"lnnox, hc, so2"
+crossval1 <- ggplot(t, aes(x=true_y, y=fitted_y)) + 
+            coord_cartesian(xlim = c(850, 1100), ylim = c(850, 1100))  +
+            geom_abline(intercept = 0, slope = 1) + 
+            geom_point() + 
+            labs(title = "mort ~ lnnox + hc + so2", x = "True Values of Mortality", y = "Fitted Values of Mortality")
 
-model4 <-lm(mort ~ nox + hc + lnso2, data=pollution2) #2nd regression
 
-pollution2
-cross <- predict(model3, pollution2) #crossvalidating with data from pollution 2 
-p2lm <- predict(model4) #actual, data that was used in ols regression
-predictions <- pollution2 %>% 
-              mutate(pred = cross) %>% 
-              mutate(actual = p2lm)  #mutating into one data set
+ransamp1alm <-lm(mort ~ nox + hc + so2, data=ransamp1)
+#creating table to plot of fitted vs true
+true_ya <- ransamp2$mort #true mort values from ransam2
+fitted_ya <- predict(ransamp1alm , ransamp2) #fitted data from ransamp2 by ransamp1 
+ta <- data.frame(true_ya, fitted_ya)
+tbl_df(ta)
+#plot with 45 degree line to show generalization
+#"lnnox, hc, so2"
+crossval2 <- ggplot(ta, aes(x=true_ya, y=fitted_ya)) + 
+            coord_cartesian(xlim = c(850, 1100), ylim = c(850, 1100)) +
+            geom_abline(intercept = 0, slope = 1) +
+            geom_point() + labs(title = "mort ~ nox + hc + so2", x = "True Values of Mortality", y = "Fitted Values of Mortality") 
 
+ransamp1blm <-lm(mort ~ nox + lnhc + lnso2, data=ransamp1)
+#creating table to plot of fitted vs true
+true_yb <- ransamp2$mort #true mort values from ransam2
+fitted_yb <- predict(ransamp1blm , ransamp2) #fitted data from ransamp2 by ransamp1 
+tb <- data.frame(true_ya, fitted_ya)
+tbl_df(tb)
+#plot with 45 degree line to show generalization
+#"lnnox, hc, so2"
+crossval3 <- ggplot(tb, aes(x=true_yb, y=fitted_yb)) + 
+            coord_cartesian(xlim = c(850, 1100), ylim = c(850, 1100)) +
+            geom_abline(intercept = 0, slope = 1) +
+            geom_point() + labs(title = "mort ~ nox + lnhc + lnso2", x = "True Values of Mortality", y = "Fitted Values of Mortality") 
 
-plotcross <- ggplot(predictions, aes(x=actual, y=pred)) + 
-            geom_abline(intercept = 0, slope = 1)
-plotcross + geom_point() + ggtitle("Cross Validatation of Model3 with data from Pollution2") 
-      #shows line values should be on if predictions                                                     were exactly equal for both models on the                                                        same data set
+ransamp1clm <-lm(mort ~ nox + lnhc + so2, data=ransamp1)
+#creating table to plot of fitted vs true
+true_yc <- ransamp2$mort #true mort values from ransam2
+fitted_yc <- predict(ransamp1clm , ransamp2) #fitted data from ransamp2 by ransamp1 
+tc <- data.frame(true_ya, fitted_ya)
+tbl_df(tc)
+#plot with 45 degree line to show generalization
+#"lnnox, hc, so2"
+crossval4 <- ggplot(tb, aes(x=true_yc, y=fitted_yc)) + 
+            coord_cartesian(xlim = c(850, 1100), ylim = c(850, 1100)) +
+            geom_abline(intercept = 0, slope = 1) +
+            geom_point() + labs(title = "mort ~ nox + lnhc + so2", x = "True Values of Mortality", y = "Fitted Values of Mortality") 
 
+multiplot(crossval1, crossval2, crossval3, crossval4, cols = 2)
 ```
-
+These are plots of the cross validated models. Each plot shows demonstrates how generalizable the model is to another data set as the perfect generalizable model should have have the same actual values to fitted values therefor they should follow close to the 45 degree line.
 
 ### f) What do you think are the reasons for using cross-validation?
 
-To see how a model will generalize for a data set, too see if the model can predict outside of the set of data it was regressed with. This allows us to see if our model is overspecified.
-
-
+Cross-Validatation will see how a model generalizes for new data, it will tell of us if our regression is overspecified, which could be the nature of the data, or our overspecification i.e. adding to many variables or changing the functional form. The model the generalizes the worst is the regression, mort = lnnox lnhc lnso2, the model that generalizes the best is 
+mort = lnnox hc lnso2, as is shown by the above plot where the points stick closely to the line. Even the best model isn't great, and if you fit the predicted mortality rate to the actual mortality rate from the data used to create the regression there is a large rootMSE.  
 
 ## Question 2:
 
@@ -174,53 +215,88 @@ Lec09 to the project directory `HW-2`.
 # DO NOT EDIT THIS SECTION!
 profiles <- read.csv("profiles.csv", header=TRUE) %>% tbl_df()
 profiles <- profiles %>% sample_frac(0.1)
+essays <- select(profiles, contains("essay"))
+profiles <- select(profiles, -contains("essay"))
+profiles <- mutate(profiles, is.female = ifelse(sex=="f", 1, 0))
+profiles$is_female <- profiles$is.female
 ```
 
 
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
-essays <- select(profiles, contains("essay"))
-profiles <- select(profiles, -contains("essay"))
-profiles <- profiles %>% 
-          mutate(is.female = ifelse(sex=="f", 1, 0))
-profiles$is_female <- profiles$is.female
+profiles$last_online[1:10]
 profiles <- profiles %>% 
   mutate(
     last_online = str_sub(last_online, 1, 10),
     last_online = as.Date(last_online)
   )
+profiles$last_online <- as.Date(profiles$last_online)
+mprofiles <- filter(profiles, sex == 'm')
+fprofiles <- filter(profiles, sex == 'f')
+lastlogm <-ggplot(data=mprofiles, aes(last_online))+
+  geom_bar((aes(y=..count../sum(..count..))))+
+  scale_x_date(date_breaks = "3 day", 
+                 labels=date_format("%b-%d"),
+                 limits = as.Date(c('2012-05-01','2012-06-21')))+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title="Proportion of Last Logins of Males by date")
 
-lastlog <-ggplot(data=profiles, aes(last_online))
-lastlog +  geom_bar() + ggtitle("Histogram of last logins") #We could remove inactive accounts 
+lastlogf <-ggplot(data=fprofiles, aes(last_online))+
+  geom_bar((aes(y=..count../sum(..count..))))+
+  scale_x_date(date_breaks = "3 day", 
+                 labels=date_format("%b-%d"),
+                 limits = as.Date(c('2012-05-01','2012-06-21'))) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title="Proportion of Last Logins of Females by date")
 
-
-
+multiplot(lastlogm, lastlogf, rows=2)
 
 heightdist <- ggplot(data=profiles, aes(x=height, y=is.female))
 heightdist +  geom_jitter(height=0.2, alpha=0.1)
 ```
-Last login distritution by day, displays active users.
+Last login distritution by day and sex, displays active users.
 Height Distribution by Sex.
+
 ```{r, echo=FALSE, fig.width=12, fig.height=6}
 druguse <- ggplot(data=profiles, aes(x=drugs)) 
 druguse +  geom_bar(stat = "count", position = "stack") + 
   facet_wrap(~sex, nrow=2) + ggtitle("Responses to Question of Drug Use")
+
+druguse <- ggplot(data=profiles, aes(x=factor(drugs), fill=sex)) 
+druguse +  geom_bar((aes(y=..count../sum(..count..))), position = "dodge")+
+  ggtitle("Responses to Question of Drug Use")
+
+profiles.new <- profiles %>% 
+                group_by(drugs) %>% 
+                tally() %>% 
+                mutate(prop = n/sum(n))
+
+profiles.new$prop <- round(profiles.new$prop, digits = 3) #round
+profiles.new$prop <- factor(profiles.new$prop, levels = profiles.new$prop[order(+profiles.new$n)]) #order
+ggplot(profiles.new,aes(as.factor(drugs),y=prop))+
+  geom_bar(stat="identity", position="dodge")+
+  labs(title = "Proportion of Responses to Drug Use Question") #plot
+
 ```
-Barplots of drug use by sex.
+Barplots of proportion of types of drug use. If I had more time I would plit this by sex.
 
 ```{r, echo=FALSE, cache=TRUE}
 orien <- ggplot(profiles, aes(x=factor(sex), fill=factor(orientation))) +
   geom_bar(position="fill") + labs(title = "Orientation", x = "sex", y = "Proportion") 
 orien #orientation
-drinks <- ggplot(profiles, aes(x=factor(is.female), fill=factor(drinks))) +
+
+print(levels(profiles$drinks))
+
+drinks <- ggplot(profiles, aes(x=factor(sex), fill=factor(drinks))) +
   geom_bar(position="fill") + labs(title = "Alcohol Use", x = "sex", y = "Proportion") 
 drinks #drinking
-
-sex <- ggplot(profiles, aes(income)) + geom_histogram() +
-  facet_wrap(~ sex) + ggtitle("Relationship of Sex and Income")
-sex #income and sex
-
-body <- ggplot(profiles, aes(body_type)) + geom_bar() +
-  facet_wrap(~ sex) + labs(title = "Sex and Self Descriptor", x = "Number", y = "Body Type")  + coord_flip()
+```
+The gray represents the proportion that is 'na' meaning no only did people not answer it they opted out of the question completely, this should be combined with the answers that are blank to show the proportion of people that did not desire to answer this question. The differences in alcohol use appear to be marginal. 
+```{r, echo=FALSE, cache=TRUE}
+geom_bar(aes(y = (..count..)/sum(..count..)))
+body <- ggplot(profiles, aes(body_type, fill = sex)) + 
+  geom_bar(aes(y = (..count..)/sum(..count..)), position="dodge") +
+  labs(title = "Sex and Self Descripto by Proportion", x = "Number", y = "Body Type")  + 
+  coord_flip()
 body #interesting differences between sexes
 
 income <- lm(income ~ height + smokes, data=profiles) #attempted regression w/ many variables
@@ -233,27 +309,31 @@ age + geom_boxplot() + labs(title = "Age Distribution By Sex", x = "sex", y = "C
 The two sexs have about the same median of 30 and similar quartile ranges. It also appears the some people don't answer this honeslty - I would assume they're not 120 year old okcupid users.
 
 ```{r, echo=FALSE, cache=TRUE}
-find.query <- function(char.vector, query){
+find_query <- function(char.vector, query){
   which.has.query <- grep(query, char.vector, ignore.case = TRUE)
   length(which.has.query) != 0
 }
-profile.has.query <- function(data.frame, query){
+
+profile_has_word <- function(data.frame, query){
   query <- tolower(query)
-  has.query <- apply(data.frame, 1, find.query, query=query)
+  has.query <- apply(data.frame, 1, find_query, query=query)
   return(has.query)
 }
-profiles$has_tractor <- profile.has.query(data.frame = essays, query = "tractor")
-group_by(profiles, has_tractor) %>% 
-  summarise(prop_female=mean(is.female)) 
+profiles$has.business <- profile_has_word(data.frame = essays, query = "business")
+business <- table(profiles$sex, profiles$has.business)
+business
+mosaicplot(business, xlab="sex", ylab="Has 'business'")
 ```
-
+This is an example of how to find words that will help predict sex.
 ```{r, echo=FALSE, cache=TRUE}
 edprof <- profiles %>% 
           group_by(education) %>% 
-          tally() #assigning it to new dataset so as not to edit profiles
-edprof$education <- factor(edprof$education, levels = edprof$education[order(-edprof$n)]) 
+          tally() %>% 
+          mutate(prop=n/sum(n))
+          #assigning it to new dataset so as not to edit profiles
+edprof$education <- factor(edprof$education, levels = edprof$education[order(-edprof$prop)]) 
 #sort deccreasing
-education1 <- ggplot(edprof, aes(education, n)) 
+education1 <- ggplot(edprof, aes(education, prop)) 
 education1 + geom_bar(stat="identity") + coord_flip() +
   labs(title = "Levels of Education", x = "Number", y = "Education Level")
 #or
@@ -266,7 +346,7 @@ education2 + geom_bar() + coord_flip()
 ```
 
 This data set is huge, many of the variables have more than 10 levels. They're are interesting and intutitive relationships that can be derived from a random sample of 5000, in example, the relationship between gender and income, or gender and declared sexual orientation. Men and women also view themselves very different as is seen by the body type variable. Men and women use different words in essays, use/abuse their bodies differently and could have varying levels of honesty. 
-  I tried to fit some regressions but found no luck, all the fits where pretty terible, although height has some predictive strenght of income.  
+  I tried to fit some regressions some variables were more predictive of others of sex.
 
 
 
